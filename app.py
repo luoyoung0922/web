@@ -603,16 +603,44 @@ def judge_answer(question_row, user_answer):
         return fallback_judge_answer(correct, user_answer)
 
 
-def question_to_json(row):
+def question_to_json(row, include_answer=True):
     return {
         "id": row["id"],
         "paperId": row["paper_id"],
         "type": row["qtype"],
         "prompt": row["prompt"],
-        "answer": row["answer"],
+        "answer": row["answer"] if include_answer else "",
         "choices": json.loads(row["choices_json"] or "[]"),
-        "explanation": row["explanation"],
+        "explanation": row["explanation"] if include_answer else "",
         "fullText": row["full_text"],
+    }
+
+
+def paper_answer_access(db, paper_id, user_id):
+    if not paper_id or not user_id:
+        return {"can_view": True, "answered_count": 0, "total_count": 0, "participate": False}
+    participation = db.execute(
+        "SELECT participate FROM paper_participants WHERE paper_id = ? AND user_id = ?",
+        (paper_id, user_id),
+    ).fetchone()
+    total = db.execute("SELECT COUNT(*) AS total_count FROM questions WHERE paper_id = ?", (paper_id,)).fetchone()
+    answered = db.execute(
+        """
+        SELECT COUNT(DISTINCT a.question_id) AS answered_count
+        FROM attempts a
+        JOIN questions q ON q.id = a.question_id
+        WHERE a.user_id = ? AND q.paper_id = ?
+        """,
+        (user_id, paper_id),
+    ).fetchone()
+    total_count = total["total_count"] if total else 0
+    answered_count = answered["answered_count"] if answered else 0
+    participate = bool(participation and participation["participate"])
+    return {
+        "can_view": not participate or answered_count >= total_count,
+        "answered_count": answered_count,
+        "total_count": total_count,
+        "participate": participate,
     }
 
 
@@ -1030,7 +1058,11 @@ def list_questions():
     params.append(limit)
     with get_db() as db:
         rows = db.execute(sql, tuple(params)).fetchall()
-    return jsonify([question_to_json(row) for row in rows])
+        include_answer = True
+        if paper_id:
+            access = paper_answer_access(db, int(paper_id), session.get("user_id") or 0)
+            include_answer = access["can_view"]
+    return jsonify([question_to_json(row, include_answer=include_answer) for row in rows])
 
 
 @app.get("/api/questions/random")
@@ -1057,28 +1089,52 @@ def random_question():
     sql += " ORDER BY RANDOM() LIMIT 1"
     with get_db() as db:
         row = db.execute(sql, tuple(params)).fetchone()
+        include_answer = True
+        if row:
+            access = paper_answer_access(db, row["paper_id"], session.get("user_id") or 0)
+            include_answer = access["can_view"]
     if not row:
         return jsonify({"error": "no_questions"}), 404
-    return jsonify(question_to_json(row))
+    return jsonify(question_to_json(row, include_answer=include_answer))
 
 
 @app.get("/api/progress")
 @login_required
 def progress():
     paper_id = request.args.get("paperId")
-    params = [session.get("user_id") or 0]
-    sql = """
+    user_id = session.get("user_id") or 0
+    params = [user_id]
+    correct_sql = """
         SELECT COUNT(DISTINCT a.question_id) AS correct_count
         FROM attempts a
         JOIN questions q ON q.id = a.question_id
         WHERE a.user_id = ? AND a.score >= 1
     """
+    answered_sql = """
+        SELECT COUNT(DISTINCT a.question_id) AS answered_count
+        FROM attempts a
+        JOIN questions q ON q.id = a.question_id
+        WHERE a.user_id = ?
+    """
+    total_sql = "SELECT COUNT(*) AS total_count FROM questions"
     if paper_id:
-        sql += " AND q.paper_id = ?"
+        correct_sql += " AND q.paper_id = ?"
+        answered_sql += " AND q.paper_id = ?"
+        total_sql += " WHERE paper_id = ?"
         params.append(int(paper_id))
     with get_db() as db:
-        row = db.execute(sql, tuple(params)).fetchone()
-    return jsonify({"correctCount": row["correct_count"] if row else 0})
+        correct_row = db.execute(correct_sql, tuple(params)).fetchone()
+        answered_row = db.execute(answered_sql, tuple(params)).fetchone()
+        total_row = db.execute(total_sql, (int(paper_id),) if paper_id else ()).fetchone()
+        access = paper_answer_access(db, int(paper_id), user_id) if paper_id else {"can_view": True}
+    return jsonify(
+        {
+            "correctCount": correct_row["correct_count"] if correct_row else 0,
+            "answeredCount": answered_row["answered_count"] if answered_row else 0,
+            "totalCount": total_row["total_count"] if total_row else 0,
+            "canViewAnswers": bool(access["can_view"]),
+        }
+    )
 
 
 @app.get("/api/papers/<int:paper_id>/participation")
@@ -1155,7 +1211,7 @@ def record_attempt():
     question_id = int(data["questionId"])
     user_answer = data.get("userAnswer", "")
     with get_db() as db:
-        row = db.execute("SELECT qtype, prompt, answer, full_text FROM questions WHERE id = ?", (question_id,)).fetchone()
+        row = db.execute("SELECT id, paper_id, qtype, prompt, answer, full_text FROM questions WHERE id = ?", (question_id,)).fetchone()
         if not row:
             return jsonify({"error": "question_not_found"}), 404
         judged = judge_answer(row, user_answer)
@@ -1177,7 +1233,18 @@ def record_attempt():
             (question_id, session.get("user_id") or 0, user_answer, is_correct, score, judged.get("feedback", ""), now_iso(), participate),
         )
         db.commit()
-    return jsonify({"ok": True, "isCorrect": bool(is_correct), "status": status, "score": score, "answer": row["answer"], "feedback": judged.get("feedback", "")})
+        access = paper_answer_access(db, row["paper_id"], session.get("user_id") or 0)
+    return jsonify(
+        {
+            "ok": True,
+            "isCorrect": bool(is_correct),
+            "status": status,
+            "score": score,
+            "answer": row["answer"] if access["can_view"] else "",
+            "canViewAnswers": bool(access["can_view"]),
+            "feedback": judged.get("feedback", ""),
+        }
+    )
 
 
 if __name__ == "__main__":

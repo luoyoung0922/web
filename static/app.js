@@ -5,6 +5,8 @@
   selectedPaperId: null,
   currentQuestion: null,
   attempts: 0,
+  answeredCount: 0,
+  canViewAnswers: true,
   settings: null,
   uploading: false,
   participation: null,
@@ -154,8 +156,12 @@ async function setParticipation(participate) {
   const data = await res.json();
   if (!res.ok) return alert(data.error || '保存参与状态失败');
   await loadParticipation();
+  await loadProgress();
+  await loadQuestions();
   await loadLeaderboard();
   renderParticipation();
+  renderQuestions();
+  renderQuestion();
   renderLeaderboard();
 }
 
@@ -187,15 +193,21 @@ function renderLeaderboard() {
 async function loadProgress() {
   if (!state.me || !state.selectedPaperId) {
     state.attempts = 0;
+    state.answeredCount = 0;
+    state.canViewAnswers = true;
     return;
   }
   const res = await fetch(`/api/progress?paperId=${encodeURIComponent(state.selectedPaperId)}`);
   if (!res.ok) {
     state.attempts = 0;
+    state.answeredCount = 0;
+    state.canViewAnswers = true;
     return;
   }
   const data = await res.json();
   state.attempts = data.correctCount || 0;
+  state.answeredCount = data.answeredCount || 0;
+  state.canViewAnswers = data.canViewAnswers !== false;
 }
 
 function renderAll() {
@@ -672,6 +684,13 @@ async function submitAnswer() {
   const data = await res.json();
   if (!res.ok) return alert(data.error || '提交失败');
   await loadProgress();
+  if (data.canViewAnswers || state.canViewAnswers) {
+    const currentId = state.currentQuestion.id;
+    await loadQuestions();
+    state.currentQuestion = state.questions.find((q) => String(q.id) === String(currentId)) || state.currentQuestion;
+    renderQuestions();
+    renderQuestion();
+  }
   await loadLeaderboard();
   renderLeaderboard();
   const label = data.status === 'correct' ? '正确' : data.status === 'partial' ? '部分正确' : '错误';
@@ -680,8 +699,21 @@ async function submitAnswer() {
   renderStats();
 }
 
+function canRevealAnswer() {
+  return !state.participation?.participate || state.canViewAnswers;
+}
+
 function revealAnswer() {
   if (!state.currentQuestion) return;
+  if (!canRevealAnswer()) {
+    const total = state.questions.length || 0;
+    alert(`参与排行榜时，答完所有题目后才能看答案。当前已答 ${state.answeredCount}/${total} 题。`);
+    return;
+  }
+  if (!state.currentQuestion.answer) {
+    alert('答案还没有加载，请刷新试卷后再试。');
+    return;
+  }
   el.feedback.className = 'feedback';
   el.feedback.textContent = `答案：${state.currentQuestion.answer}`;
 }
