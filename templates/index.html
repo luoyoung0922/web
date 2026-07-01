@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>题海练习</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <main class="page">
+    <section class="topbar">
+      <div class="brand">
+        <span class="brand-mark">✦</span>
+        <div>
+          <p class="kicker">复习周限定</p>
+          <p class="brand-name">题海练习</p>
+        </div>
+      </div>
+      <div id="sessionBar" class="session-bar"></div>
+    </section>
+
+    <section class="shell">
+      <aside class="sidebar">
+        <div class="card login-card" id="authBox"></div>
+        <div class="card select-card">
+          <div class="card-head">
+            <p>试卷选择</p>
+            <button id="reloadPapersBtn" class="icon-btn" type="button" title="刷新试卷">↻</button>
+          </div>
+          <div id="paperList" class="paper-list"></div>
+        </div>
+        <div class="card source-card">
+          <div class="card-head">
+            <p>上传记录</p>
+          </div>
+          <div id="sourceList" class="source-list"></div>
+        </div>
+      </aside>
+
+      <section class="main-area">
+        <section class="card hero-card">
+          <div class="hero-copy">
+            <p class="kicker">答题模式</p>
+            <div id="paperTitle" class="hero-title">先选择一份试卷</div>
+            <p id="paperMeta" class="muted">左侧选择试卷，进入后按题号顺序作答。</p>
+          </div>
+          <aside class="stats-card compact-stats">
+            <div class="stats">
+              <div><strong id="paperCount">0</strong><span>试卷</span></div>
+              <div><strong id="questionCount">0</strong><span>题目</span></div>
+              <div><strong id="attemptCount">0</strong><span>已做</span></div>
+            </div>
+            <div class="meter"><div id="progressBar"></div></div>
+            <p id="statusText" class="muted">等待登录。</p>
+          </aside>
+        </section>
+
+        <section class="exam-layout">
+          <aside class="card question-nav-card">
+            <div class="card-head">
+              <p>题目总览</p>
+              <span id="paperBadge" class="pill">未选择</span>
+            </div>
+            <div id="questionList" class="question-nav"></div>
+          </aside>
+
+          <article class="card quiz-card">
+            <div class="card-head">
+              <p id="quizHead">当前题目</p>
+            </div>
+            <div id="participationBox" class="participation-box"></div>
+            <div id="questionPrompt" class="question">请选择试卷后开始练习。</div>
+            <div id="answerArea" class="answer-area"></div>
+            <div class="actions">
+              <button id="prevBtn" type="button" class="ghost">上一题</button>
+              <button id="nextBtn" type="button" class="ghost">下一题</button>
+              <button id="checkBtn" type="button">提交答案</button>
+              <button id="showBtn" type="button" class="ghost">查看答案</button>
+              <button id="randomBtn" type="button" class="ghost">随机题目</button>
+            </div>
+            <div id="feedback" class="feedback"></div>
+            <div id="leaderboardBox" class="leaderboard-box"></div>
+          </article>
+        </section>
+
+        <section id="adminPanel" class="card admin-panel"></section>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
