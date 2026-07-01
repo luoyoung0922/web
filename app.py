@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import os
+import ssl
 import sqlite3
 import uuid
 from datetime import datetime
@@ -9,6 +10,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pdfplumber
+import certifi
 from docx import Document
 from flask import Flask, abort, jsonify, render_template, request, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -462,6 +464,7 @@ def responses_endpoint_url():
 
 def raw_responses_create(payload):
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
     request = Request(
         responses_endpoint_url(),
         data=body,
@@ -472,7 +475,7 @@ def raw_responses_create(payload):
         method="POST",
     )
     try:
-        with urlopen(request, timeout=120) as response:
+        with urlopen(request, timeout=120, context=ssl_context) as response:
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
