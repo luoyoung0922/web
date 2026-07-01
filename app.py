@@ -5,6 +5,8 @@ import sqlite3
 import uuid
 from datetime import datetime
 from functools import wraps
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import pdfplumber
 from docx import Document
@@ -398,6 +400,14 @@ def ai_client():
     return OpenAI(**kwargs)
 
 
+def ai_api_key():
+    return get_setting("ai_api_key", DEFAULT_AI_API_KEY)
+
+
+def ai_api_base_url():
+    return (get_setting("ai_api_base", DEFAULT_AI_API_BASE) or "https://api.openai.com/v1").strip().rstrip("/")
+
+
 def ai_model():
     return get_setting("ai_model", DEFAULT_AI_MODEL)
 
@@ -408,7 +418,7 @@ def ai_api_type():
 
 
 def ai_enabled():
-    return bool(get_setting("ai_api_key", DEFAULT_AI_API_KEY) and OpenAI)
+    return bool(ai_api_key())
 
 
 def parse_json_content(content):
@@ -422,6 +432,17 @@ def parse_json_content(content):
 
 
 def response_output_text(response):
+    if isinstance(response, dict):
+        if response.get("output_text"):
+            return response["output_text"]
+        chunks = []
+        for item in response.get("output", []) or []:
+            for content in item.get("content", []) or []:
+                text = content.get("text") if isinstance(content, dict) else None
+                if text:
+                    chunks.append(text)
+        return "".join(chunks)
+
     direct_text = getattr(response, "output_text", None)
     if direct_text:
         return direct_text
@@ -434,10 +455,38 @@ def response_output_text(response):
     return "".join(chunks)
 
 
-def chat_json(system_prompt, user_payload):
+def responses_endpoint_url():
+    base_url = ai_api_base_url()
+    return base_url if base_url.endswith("/responses") else f"{base_url}/responses"
+
+
+def raw_responses_create(payload):
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = Request(
+        responses_endpoint_url(),
+        data=body,
+        headers={
+            "Authorization": f"Bearer {ai_api_key()}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=120) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Responses API 请求失败({exc.code}): {detail[:800]}") from exc
+
+
+def responses_create(payload):
     client = ai_client()
-    if not client:
-        return None
+    if client and hasattr(client, "responses"):
+        return client.responses.create(**payload)
+    return raw_responses_create(payload)
+
+
+def chat_json(system_prompt, user_payload):
     payload_text = json.dumps(user_payload, ensure_ascii=False)
     if ai_api_type() == "responses":
         kwargs = {
@@ -449,18 +498,18 @@ def chat_json(system_prompt, user_payload):
             "temperature": 0.2,
         }
         try:
-            response = client.responses.create(
-                **kwargs,
-                text={"format": {"type": "json_object"}},
-            )
+            response = responses_create({**kwargs, "text": {"format": {"type": "json_object"}}})
         except Exception as exc:
             message = str(exc).lower()
             if "text" not in message and "format" not in message and "json_object" not in message:
                 raise
-            response = client.responses.create(**kwargs)
+            response = responses_create(kwargs)
         content = response_output_text(response)
         return parse_json_content(content)
 
+    client = ai_client()
+    if not client:
+        return None
     response = client.chat.completions.create(
         model=ai_model(),
         messages=[
