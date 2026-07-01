@@ -259,6 +259,17 @@ select { cursor: pointer; }
   justify-content: space-between;
   gap: 12px;
 }
+.participation-card .actions button,
+.participation-card .actions button.ghost {
+  background: rgba(123, 92, 255, 0.14);
+  color: var(--accent);
+  border: 1px solid rgba(123, 92, 255, 0.22);
+  box-shadow: none;
+}
+.participation-card .actions button:hover,
+.participation-card .actions button.ghost:hover {
+  background: rgba(123, 92, 255, 0.2);
+}
 .rank-row {
   display: grid;
   grid-template-columns: 24px 1fr auto;
