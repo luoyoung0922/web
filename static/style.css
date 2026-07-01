@@ -211,9 +211,12 @@ select { cursor: pointer; }
   max-height: 44px;
   overflow: hidden;
   line-height: 1.45;
+  color: var(--ink);
 }
-.question-nav .paper-meta { grid-column: 2; font-size: 12px; }
-.paper-item.active { border-color: rgba(123, 92, 255, 0.5); background: rgba(123, 92, 255, 0.1); }
+.question-nav .paper-meta { grid-column: 2; font-size: 12px; color: #4e5678; }
+.paper-item.active { border-color: rgba(123, 92, 255, 0.75); background: rgba(123, 92, 255, 0.16); }
+.question-nav .paper-item { color: var(--ink); }
+.question-nav .paper-item:not(.active):hover { background: rgba(255,255,255,0.92); border-color: rgba(87, 98, 158, 0.28); }
 .paper-title, .source-row strong { display: block; font-weight: 700; }
 .paper-meta, .source-row p { color: var(--muted); margin-top: 4px; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
