@@ -26,6 +26,7 @@ FIXED_ADMIN_PASSWORD = os.environ.get("FIXED_ADMIN_PASSWORD", "admin123456")
 DEFAULT_AI_API_KEY = os.environ.get("AI_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
 DEFAULT_AI_API_BASE = os.environ.get("AI_API_BASE") or os.environ.get("OPENAI_BASE_URL") or ""
 DEFAULT_AI_MODEL = os.environ.get("AI_MODEL") or os.environ.get("OPENAI_MODEL") or "gpt-4o-mini"
+DEFAULT_AI_API_TYPE = os.environ.get("AI_API_TYPE", "chat")
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -192,6 +193,7 @@ def bootstrap_fixed_admin():
             ("ai_api_key", DEFAULT_AI_API_KEY),
             ("ai_api_base", DEFAULT_AI_API_BASE),
             ("ai_model", DEFAULT_AI_MODEL),
+            ("ai_api_type", DEFAULT_AI_API_TYPE),
         ]:
             db.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
@@ -400,26 +402,75 @@ def ai_model():
     return get_setting("ai_model", DEFAULT_AI_MODEL)
 
 
+def ai_api_type():
+    value = (get_setting("ai_api_type", DEFAULT_AI_API_TYPE) or "chat").strip().lower()
+    return "responses" if value == "responses" else "chat"
+
+
 def ai_enabled():
     return bool(get_setting("ai_api_key", DEFAULT_AI_API_KEY) and OpenAI)
+
+
+def parse_json_content(content):
+    text = (content or "{}").strip()
+    if text.startswith("```"):
+        text = text.strip("`").strip()
+        if text.lower().startswith("json"):
+            text = text[4:].strip()
+    data = json.loads(text or "{}")
+    return data if isinstance(data, dict) else None
+
+
+def response_output_text(response):
+    direct_text = getattr(response, "output_text", None)
+    if direct_text:
+        return direct_text
+    chunks = []
+    for item in getattr(response, "output", []) or []:
+        for content in getattr(item, "content", []) or []:
+            text = getattr(content, "text", None)
+            if text:
+                chunks.append(text)
+    return "".join(chunks)
 
 
 def chat_json(system_prompt, user_payload):
     client = ai_client()
     if not client:
         return None
+    payload_text = json.dumps(user_payload, ensure_ascii=False)
+    if ai_api_type() == "responses":
+        kwargs = {
+            "model": ai_model(),
+            "input": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": payload_text},
+            ],
+            "temperature": 0.2,
+        }
+        try:
+            response = client.responses.create(
+                **kwargs,
+                text={"format": {"type": "json_object"}},
+            )
+        except Exception as exc:
+            message = str(exc).lower()
+            if "text" not in message and "format" not in message and "json_object" not in message:
+                raise
+            response = client.responses.create(**kwargs)
+        content = response_output_text(response)
+        return parse_json_content(content)
+
     response = client.chat.completions.create(
         model=ai_model(),
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+            {"role": "user", "content": payload_text},
         ],
         response_format={"type": "json_object"},
         temperature=0.2,
     )
-    content = response.choices[0].message.content or "{}"
-    data = json.loads(content)
-    return data if isinstance(data, dict) else None
+    return parse_json_content(response.choices[0].message.content)
 
 
 def build_question_bank(raw_text, filename, use_ai=True):
@@ -536,6 +587,7 @@ def me():
             "ai": {
                 "enabled": ai_enabled(),
                 "model": ai_model(),
+                "apiType": ai_api_type(),
                 "baseUrl": get_setting("ai_api_base", DEFAULT_AI_API_BASE) or "default",
             },
         }
@@ -638,6 +690,7 @@ def admin_settings():
             "aiApiKey": get_setting("ai_api_key", ""),
             "aiApiBase": get_setting("ai_api_base", ""),
             "aiModel": get_setting("ai_model", DEFAULT_AI_MODEL),
+            "aiApiType": ai_api_type(),
         }
     )
 
@@ -650,6 +703,9 @@ def save_admin_settings():
     ai_api_key = str(data.get("aiApiKey", "")).strip()
     ai_api_base = str(data.get("aiApiBase", "")).strip()
     ai_model_value = str(data.get("aiModel", "")).strip() or DEFAULT_AI_MODEL
+    ai_api_type_value = str(data.get("aiApiType", "chat")).strip().lower()
+    if ai_api_type_value not in {"chat", "responses"}:
+        ai_api_type_value = "chat"
     with get_db() as db:
         admin = db.execute("SELECT id FROM admins WHERE username = ?", (fixed_admin_user,)).fetchone()
         if not admin:
@@ -659,6 +715,7 @@ def save_admin_settings():
         db.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", ("ai_api_key", ai_api_key))
         db.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", ("ai_api_base", ai_api_base))
         db.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", ("ai_model", ai_model_value))
+        db.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", ("ai_api_type", ai_api_type_value))
         db.commit()
     return jsonify({"ok": True})
 
@@ -856,21 +913,12 @@ def delete_paper(paper_id):
 def test_ai():
     if not ai_enabled():
         return jsonify({"ok": False, "enabled": False, "message": "ai_not_configured"}), 400
-    client = ai_client()
-    if not client:
-        return jsonify({"ok": False, "enabled": False, "message": "ai_client_unavailable"}), 400
     try:
-        response = client.chat.completions.create(
-            model=ai_model(),
-            messages=[
-                {"role": "system", "content": "只返回 JSON。"},
-                {"role": "user", "content": "请返回 {\"ok\":true,\"message\":\"AI通了\"}"},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0,
+        result = chat_json(
+            "只返回 JSON，不要 Markdown。",
+            {"task": "请返回 {\"ok\":true,\"message\":\"AI通了\"}"},
         )
-        content = response.choices[0].message.content or "{}"
-        return jsonify({"ok": True, "enabled": True, "result": json.loads(content), "model": ai_model()})
+        return jsonify({"ok": True, "enabled": True, "result": result or {}, "model": ai_model(), "apiType": ai_api_type()})
     except Exception as exc:
         return jsonify({"ok": False, "enabled": True, "error": str(exc)}), 500
 

@@ -417,6 +417,10 @@ function renderAdmin() {
         <div class="card-head"><p>Owner 设置</p></div>
         <div class="field-stack">
           <input id="fixedAdminUser" value="${escapeHtml(state.settings?.fixedAdminUser || state.me.username)}" placeholder="固定管理员账号" />
+          <select id="aiApiType">
+            <option value="chat" ${(state.settings?.aiApiType || 'chat') === 'chat' ? 'selected' : ''}>Chat Completions</option>
+            <option value="responses" ${state.settings?.aiApiType === 'responses' ? 'selected' : ''}>Responses</option>
+          </select>
           <input id="aiApiKey" value="${escapeHtml(state.settings?.aiApiKey || '')}" placeholder="AI API Key" />
           <input id="aiApiBase" value="${escapeHtml(state.settings?.aiApiBase || '')}" placeholder="AI API Base" />
           <input id="aiModel" value="${escapeHtml(state.settings?.aiModel || '')}" placeholder="AI 模型名" />
@@ -595,10 +599,11 @@ async function saveSettings() {
   const aiApiKey = document.getElementById('aiApiKey').value;
   const aiApiBase = document.getElementById('aiApiBase').value;
   const aiModel = document.getElementById('aiModel').value.trim();
+  const aiApiType = document.getElementById('aiApiType').value;
   const res = await fetch('/api/admin/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fixedAdminUser, aiApiKey, aiApiBase, aiModel }),
+    body: JSON.stringify({ fixedAdminUser, aiApiKey, aiApiBase, aiModel, aiApiType }),
   });
   const data = await res.json();
   if (!res.ok) return alert(data.error || '保存失败');
@@ -615,7 +620,7 @@ async function testAi() {
   });
   const data = await res.json();
   if (!res.ok) return alert(data.error || data.message || 'AI 测试失败');
-  alert(`AI 可用，模型：${data.model}`);
+  alert(`AI 可用，接口：${data.apiType || 'chat'}，模型：${data.model}`);
 }
 
 
