@@ -1117,15 +1117,24 @@ def progress():
         WHERE a.user_id = ?
     """
     total_sql = "SELECT COUNT(*) AS total_count FROM questions"
+    detail_sql = """
+        SELECT a.question_id, MAX(a.score) AS best_score
+        FROM attempts a
+        JOIN questions q ON q.id = a.question_id
+        WHERE a.user_id = ?
+    """
     if paper_id:
         correct_sql += " AND q.paper_id = ?"
         answered_sql += " AND q.paper_id = ?"
         total_sql += " WHERE paper_id = ?"
+        detail_sql += " AND q.paper_id = ?"
         params.append(int(paper_id))
+    detail_sql += " GROUP BY a.question_id"
     with get_db() as db:
         correct_row = db.execute(correct_sql, tuple(params)).fetchone()
         answered_row = db.execute(answered_sql, tuple(params)).fetchone()
         total_row = db.execute(total_sql, (int(paper_id),) if paper_id else ()).fetchone()
+        detail_rows = db.execute(detail_sql, tuple(params)).fetchall()
         access = paper_answer_access(db, int(paper_id), user_id) if paper_id else {"can_view": True}
     return jsonify(
         {
@@ -1133,6 +1142,14 @@ def progress():
             "answeredCount": answered_row["answered_count"] if answered_row else 0,
             "totalCount": total_row["total_count"] if total_row else 0,
             "canViewAnswers": bool(access["can_view"]),
+            "questions": [
+                {
+                    "questionId": row["question_id"],
+                    "bestScore": row["best_score"],
+                    "status": score_status(float(row["best_score"] or 0)),
+                }
+                for row in detail_rows
+            ],
         }
     )
 

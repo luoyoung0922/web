@@ -195,7 +195,8 @@ select { cursor: pointer; }
   grid-template-columns: 34px minmax(0, 1fr);
   align-items: start;
   gap: 8px;
-  padding: 10px;
+  padding: 10px 10px 30px;
+  position: relative;
 }
 .question-number {
   display: inline-flex;
@@ -220,6 +221,20 @@ select { cursor: pointer; }
 .question-nav .paper-item:not(.active):hover { background: rgba(255,255,255,0.92); border-color: rgba(87, 98, 158, 0.28); }
 .paper-title, .source-row strong { display: block; font-weight: 700; }
 .paper-meta, .source-row p { color: #4e5678; margin-top: 4px; }
+.question-result {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.88);
+  border: 1px solid var(--line);
+}
+.question-result.correct { color: var(--good); }
+.question-result.partial { color: #9a6700; }
+.question-result.wrong { color: var(--bad); }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .stats div {
   padding: 12px;

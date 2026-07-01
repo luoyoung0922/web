@@ -7,6 +7,7 @@
   attempts: 0,
   answeredCount: 0,
   canViewAnswers: true,
+  questionProgress: {},
   settings: null,
   uploading: false,
   participation: null,
@@ -195,6 +196,7 @@ async function loadProgress() {
     state.attempts = 0;
     state.answeredCount = 0;
     state.canViewAnswers = true;
+    state.questionProgress = {};
     return;
   }
   const res = await fetch(`/api/progress?paperId=${encodeURIComponent(state.selectedPaperId)}`);
@@ -202,12 +204,14 @@ async function loadProgress() {
     state.attempts = 0;
     state.answeredCount = 0;
     state.canViewAnswers = true;
+    state.questionProgress = {};
     return;
   }
   const data = await res.json();
   state.attempts = data.correctCount || 0;
   state.answeredCount = data.answeredCount || 0;
   state.canViewAnswers = data.canViewAnswers !== false;
+  state.questionProgress = Object.fromEntries((data.questions || []).map((item) => [String(item.questionId), item]));
 }
 
 function renderAll() {
@@ -324,6 +328,7 @@ function renderQuestions() {
     <button class="paper-item ${state.currentQuestion?.id === q.id ? 'active' : ''}" data-question-id="${q.id}" type="button">
       <span class="question-number">${index + 1}</span><span class="paper-title">${escapeHtml(q.prompt)}</span>
       <span class="paper-meta">${q.type === 'choice' ? '选择题' : q.type === 'judge' ? '判断题' : '填空/简答'} · 点击作答</span>
+      ${renderQuestionProgress(q.id)}
     </button>
   `).join('');
   el.questionList.querySelectorAll('[data-question-id]').forEach((btn) => {
@@ -635,6 +640,15 @@ async function testAi() {
   alert(`AI 可用，接口：${data.apiType || 'chat'}，模型：${data.model}`);
 }
 
+function renderQuestionProgress(questionId) {
+  const item = state.questionProgress[String(questionId)];
+  if (!item) return '';
+  const score = Math.round((Number(item.bestScore) || 0) * 100);
+  const status = item.status || (score >= 85 ? 'correct' : score >= 40 ? 'partial' : 'wrong');
+  const label = status === 'correct' ? '正确' : status === 'partial' ? `部分 ${score}%` : `错误 ${score}%`;
+  return `<span class="question-result ${status}">${label}</span>`;
+}
+
 
 function currentQuestionIndex() {
   if (!state.currentQuestion) return -1;
@@ -684,6 +698,7 @@ async function submitAnswer() {
   const data = await res.json();
   if (!res.ok) return alert(data.error || '提交失败');
   await loadProgress();
+  renderQuestions();
   if (data.canViewAnswers || state.canViewAnswers) {
     const currentId = state.currentQuestion.id;
     await loadQuestions();
